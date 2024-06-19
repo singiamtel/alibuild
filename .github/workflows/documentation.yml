@@ -25,6 +25,6 @@ jobs:
           restore-keys: |
             mkdocs-material-
       - run: |
-        pip install mkdocs-material 
-        cd docs
-        mkdocs gh-deploy --force # Always keep in sync with master branch
+          pip install mkdocs-material 
+          cd docs
+          mkdocs gh-deploy --force # Always keep in sync with master branch
