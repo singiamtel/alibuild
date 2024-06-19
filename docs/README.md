@@ -1,1 +1,1 @@
-Read the documentation here: <http://alisw.github.io/alibuild/>
+Documentation migrated to <http://alisw.github.io/alibuild/>
