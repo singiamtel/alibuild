@@ -77,9 +77,9 @@ setup(
     use_scm_version={'write_to': 'alibuild_helpers/_version.py'},
     setup_requires=[
         # The 6.* series removed support for Python 2.7.
-        'setuptools_scm<6.0.0' if sys.version_info < (3, 0) else
+        # 'setuptools_scm<6.0.0' if sys.version_info < (3, 0) else
         # The 7.* series removed support for Python 3.6.
-        'setuptools_scm<7.0.0' if sys.version_info < (3, 7) else
+        # 'setuptools_scm<7.0.0' if sys.version_info < (3, 6) else
         'setuptools_scm'
     ],
 
