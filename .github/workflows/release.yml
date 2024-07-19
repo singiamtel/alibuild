@@ -2,6 +2,7 @@
 name: Release
 
 'on':
+  workflow_dispatch:
   release:
     types: [published]
 
@@ -16,7 +17,8 @@ jobs:
     steps:
       - name: Checkout alibuild
         uses: actions/checkout@v4
-        fetch-depth: 0
+        with:
+          fetch-depth: 0
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
