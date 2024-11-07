@@ -1066,7 +1066,7 @@ def doBuild(args, parser):
         mirrorVolume=("-v %s:/mirror" % quote(dirname(spec["reference"]))
                       if "reference" in spec else ""),
         cvmfsVolume=("-v /cvmfs/alice.cern.ch:/cvmfs/alice.cern.ch"
-                      if syncHelper is CVMFSRemoteSync else "")
+                      if isinstance(syncHelper, CVMFSRemoteSync) else ""),
       )
       print("Build command: %s" % build_command)
     else:
