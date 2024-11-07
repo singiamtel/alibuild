@@ -16,7 +16,7 @@ from alibuild_helpers.utilities import resolve_tag, resolve_version, short_commi
 from alibuild_helpers.git import Git, git
 from alibuild_helpers.sl import Sapling
 from alibuild_helpers.scm import SCMError
-from alibuild_helpers.sync import remote_from_url
+from alibuild_helpers.sync import remote_from_url, CVMFSRemoteSync
 from alibuild_helpers.workarea import logged_scm, updateReferenceRepoSpec, checkout_sources
 from alibuild_helpers.log import ProgressPrint, log_current_package
 from glob import glob
@@ -1047,8 +1047,9 @@ def doBuild(args, parser):
       build_command = (
         "docker run --rm --entrypoint= --user $(id -u):$(id -g) "
         "-v {workdir}:/sw -v {scriptDir}/build.sh:/build.sh:ro "
-        "{mirrorVolume} {develVolumes} {additionalEnv} {additionalVolumes} "
-        "-e WORK_DIR_OVERRIDE=/sw {extraArgs} {image} bash -ex /build.sh"
+        "{mirrorVolume} {cvmfsVolume} {develVolumes} {additionalEnv} "
+        "{additionalVolumes} -e WORK_DIR_OVERRIDE=/sw {extraArgs} "
+        "{image} bash -ex /build.sh"
       ).format(
         image=quote(args.dockerImage),
         workdir=quote(abspath(args.workDir)),
@@ -1064,7 +1065,10 @@ def doBuild(args, parser):
           "-v %s" % quote(volume) for volume in args.volumes),
         mirrorVolume=("-v %s:/mirror" % quote(dirname(spec["reference"]))
                       if "reference" in spec else ""),
+        cvmfsVolume=("-v /cvmfs/alice.cern.ch:/cvmfs/alice.cern.ch"
+                      if syncHelper is CVMFSRemoteSync else "")
       )
+      print("Build command: %s" % build_command)
     else:
       os.environ.update(buildEnvironment)
       build_command = "%s -e -x %s/build.sh 2>&1" % (BASH, quote(scriptDir))
@@ -1077,7 +1081,7 @@ def doBuild(args, parser):
        args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"])
     )
     err = execute(build_command, printer=progress)
-    progress.end("failed" if err else "done", err)
+    progress.end("failed" if err else "done", bool(err))
     report_event("BuildError" if err else "BuildSuccess", spec["package"], " ".join((
       args.architecture,
       spec["version"],
