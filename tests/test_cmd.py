@@ -1,4 +1,5 @@
 # Assuming you are using the mock library to ... mock things
+
 from unittest import mock
 
 from alibuild_helpers.cmd import execute, DockerRunner
