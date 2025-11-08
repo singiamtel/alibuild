@@ -2,8 +2,8 @@ from os.path import abspath, exists, basename, dirname, join, realpath
 from os import makedirs, unlink, readlink, rmdir
 from alibuild_helpers import __version__
 from alibuild_helpers.analytics import report_event
-from alibuild_helpers.log import debug, info, banner, warning
-from alibuild_helpers.log import dieOnError
+from alibuild_helpers.log import debug, info, banner, warning, logger
+from alibuild_helpers.log import dieOnError, ModernTerminal
 from alibuild_helpers.cmd import execute, DockerRunner, BASH, install_wrapper_script, getstatusoutput
 from alibuild_helpers.utilities import prunePaths, symlink, call_ignoring_oserrors, topological_sort, detectArch
 from alibuild_helpers.utilities import resolve_store_path
@@ -27,6 +27,7 @@ import tempfile
 import concurrent.futures
 import importlib
 import json
+import logging
 import socket
 import os
 import re
@@ -712,6 +713,24 @@ def doBuild(args, parser):
     info("--dry-run / -n specified. Not building.")
     return
 
+  # Initialize modern terminal display
+  use_classic_output = getattr(args, "classicOutput", False) or logger.level <= logging.DEBUG
+  modern_terminal = ModernTerminal(max_output_lines=8, use_classic=use_classic_output)
+
+  # Add build steps for all packages that will be built
+  package_step_indices = {}
+  for p in buildOrder:
+    if p == "defaults-release":
+      continue  # Skip defaults-release as it's not a real build
+    spec = specs[p]
+    version_str = getattr(args, "develPrefix", None) if spec["is_devel_pkg"] else spec.get("version", spec.get("tag", ""))
+    step_desc = f"Building {p}@{version_str}"
+    step_index = modern_terminal.add_step(p, step_desc)
+    package_step_indices[p] = step_index
+
+  # Start the modern terminal display
+  modern_terminal.start()
+
   # We now iterate on all the packages, making sure we build correctly every
   # single one of them. This is done this way so that the second time we run we
   # can check if the build was consistent and if it is, we bail out.
@@ -1108,11 +1127,19 @@ def doBuild(args, parser):
       build_command = "%s -e -x %s/build.sh 2>&1" % (BASH, quote(scriptDir))
 
     debug("Build command: %s", build_command)
+
+    # Get step index for this package and start it
+    step_index = package_step_indices.get(p)
+    if step_index is not None:
+      modern_terminal.start_step(step_index)
+
     progress = ProgressPrint(
       ("Unpacking %s@%s" if cachedTarball else
        "Compiling %s@%s (use --debug for full output)") %
       (spec["package"],
-       args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"])
+       args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"]),
+      step_index=step_index,
+      modern_terminal=modern_terminal
     )
     err = execute(build_command, printer=progress)
     progress.end("failed" if err else "done", err)
@@ -1209,4 +1236,8 @@ def doBuild(args, parser):
   if untrackedFilesDirectories:
     banner("Untracked files in the following directories resulted in a rebuild of "
            "the associated package and its dependencies:\n%s\n\nPlease commit or remove them to avoid useless rebuilds.", "\n".join(untrackedFilesDirectories))
+
+  # Stop the modern terminal display
+  modern_terminal.stop()
+
   debug("Everything done")

@@ -80,6 +80,8 @@ def doParseArgs():
   build_parser.add_argument("-j", "--jobs", dest="jobs", type=int, default=multiprocessing.cpu_count(),
                             help=("The number of parallel compilation processes to run. "
                                   "Default for this system: %(default)d."))
+  build_parser.add_argument("--classic-output", dest="classicOutput", action="store_true", default=False,
+                            help="Use classic terminal output instead of modern display with build steps overview.")
   build_parser.add_argument("-u", "--fetch-repos", dest="fetchRepos", action="store_true",
                             help=("Fetch updates to repositories in MIRRORDIR. Required but nonexistent "
                                   "repositories are always cloned, even if this option is not given."))
