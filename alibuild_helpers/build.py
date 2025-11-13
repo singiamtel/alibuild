@@ -18,6 +18,7 @@ from alibuild_helpers.scm import SCMError
 from alibuild_helpers.sync import remote_from_url
 from alibuild_helpers.workarea import logged_scm, updateReferenceRepoSpec, checkout_sources
 from alibuild_helpers.log import ProgressPrint, log_current_package
+from alibuild_helpers.modern_output import ModernBuildProgress, ModernProgressPrinter
 from glob import glob
 from textwrap import dedent
 from collections import OrderedDict
@@ -730,6 +731,20 @@ def doBuild(args, parser):
     mainPackage = buildOrder.pop()
     warning("Not rebuilding %s because --only-deps option provided.", mainPackage)
 
+  # Initialize modern terminal output if requested
+  modernProgress = None
+  if getattr(args, "modernOutput", False):
+    modernProgress = ModernBuildProgress(
+      total_packages=len(buildOrder),
+      max_log_lines=10,
+      enable_modern_output=not args.debug  # Disable modern output in debug mode
+    )
+    # Pre-populate the package list
+    for pkg in buildOrder:
+      pkg_spec = specs[pkg]
+      version = getattr(args, "develPrefix", None) if pkg_spec.get("is_devel_pkg") else pkg_spec.get("version", "")
+      modernProgress.add_package(pkg, version)
+
   while buildOrder:
     p = buildOrder[0]
     spec = specs[p]
@@ -1108,12 +1123,16 @@ def doBuild(args, parser):
       build_command = "%s -e -x %s/build.sh 2>&1" % (BASH, quote(scriptDir))
 
     debug("Build command: %s", build_command)
-    progress = ProgressPrint(
-      ("Unpacking %s@%s" if cachedTarball else
-       "Compiling %s@%s (use --debug for full output)") %
-      (spec["package"],
-       args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"])
-    )
+    begin_msg = ("Unpacking %s@%s" if cachedTarball else
+                 "Compiling %s@%s (use --debug for full output)") % \
+                (spec["package"],
+                 args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"])
+
+    if modernProgress:
+      progress = ModernProgressPrinter(modernProgress, begin_msg)
+    else:
+      progress = ProgressPrint(begin_msg)
+
     err = execute(build_command, printer=progress)
     progress.end("failed" if err else "done", err)
     report_event("BuildError" if err else "BuildSuccess", spec["package"], " ".join((
@@ -1209,4 +1228,9 @@ def doBuild(args, parser):
   if untrackedFilesDirectories:
     banner("Untracked files in the following directories resulted in a rebuild of "
            "the associated package and its dependencies:\n%s\n\nPlease commit or remove them to avoid useless rebuilds.", "\n".join(untrackedFilesDirectories))
+
+  # Cleanup modern terminal output
+  if modernProgress:
+    modernProgress.cleanup()
+
   debug("Everything done")
