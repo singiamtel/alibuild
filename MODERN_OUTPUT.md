@@ -1,14 +1,16 @@
 # Modern Terminal Output for alibuild
 
-This document describes the new modern terminal output feature for alibuild, which provides a cleaner and more informative build experience.
+This document describes the modern terminal output for alibuild, which provides a cleaner and more informative build experience.
 
 ## Overview
 
-The modern output format displays:
+The modern output format is **enabled by default** for interactive terminal sessions and displays:
 1. **Fixed header** showing all build steps with real-time timings
 2. **Scrolling log area** showing the most recent verbose output (default: 10 lines)
 
 This is similar to modern container CLIs like Docker and Podman, where you can see the overall progress while still monitoring detailed output.
+
+Modern output automatically activates when running in a TTY (interactive terminal) and is disabled in debug mode or when output is redirected.
 
 ## Example Output
 
@@ -38,36 +40,40 @@ Installing ROOT to build directory
 
 ## Usage
 
-### Enable Modern Output
+### Default Behavior
 
-Add the `--modern-output` flag to your build command:
+Modern output is **enabled by default** when you run aliBuild in an interactive terminal:
 
 ```bash
-aliBuild build --modern-output O2
+# Modern output is automatically used
+aliBuild build O2
 ```
 
 ### Complete Example
 
 ```bash
-aliBuild build --modern-output \
+# Modern output is active by default in TTY
+aliBuild build \
   --defaults o2 \
   --jobs 8 \
   O2
 ```
 
-### With Other Options
+### All Standard Options Work
+
+Modern output works seamlessly with all alibuild options:
 
 ```bash
-# Modern output with development mode
-aliBuild build --modern-output -z devel O2
+# With development mode
+aliBuild build -z devel O2
 
-# Modern output with remote store
-aliBuild build --modern-output \
+# With remote store
+aliBuild build \
   --remote-store rsync://myserver/alibuild-store \
   O2
 
-# Modern output with Docker
-aliBuild build --modern-output \
+# With Docker
+aliBuild build \
   --docker \
   --architecture slc9_x86-64 \
   O2
@@ -75,19 +81,17 @@ aliBuild build --modern-output \
 
 ## Behavior
 
-### Debug Mode
-Modern output is automatically disabled when using `--debug` mode, as debug mode shows all output immediately and is incompatible with the fixed header approach.
+### Automatic Activation
+Modern output is automatically enabled when:
+- Running in an interactive terminal (TTY detected)
+- **NOT** in debug mode (`--debug` not specified)
 
-```bash
-# This will use traditional output (modern output disabled)
-aliBuild build --modern-output --debug O2
-```
-
-### Non-TTY Environments
-Modern output requires a TTY (interactive terminal). It automatically falls back to traditional output when:
-- Output is redirected to a file: `aliBuild build --modern-output O2 > build.log`
-- Running in CI/CD environments without TTY
-- Running in non-interactive shells
+### Automatic Fallback to Traditional Output
+Modern output automatically falls back to traditional line-by-line output when:
+- **Debug mode** is enabled: `aliBuild build --debug O2`
+- **Output is redirected** to a file: `aliBuild build O2 > build.log`
+- **Running in CI/CD** environments without TTY
+- **Non-interactive shells** where stdout is not a TTY
 
 ### Log Lines Configuration
 By default, the modern output shows the last 10 lines of build output. This can be customized by modifying the `max_log_lines` parameter in the code (future versions may expose this as a command-line option).
@@ -103,8 +107,7 @@ The modern output uses only ANSI escape codes for terminal control - no external
 
 ### Files Modified
 - `alibuild_helpers/modern_output.py` - New module containing the modern output classes
-- `alibuild_helpers/build.py` - Integration into the build process
-- `alibuild_helpers/args.py` - Added `--modern-output` command-line flag
+- `alibuild_helpers/build.py` - Integration into the build process with automatic TTY detection
 
 ### Key Classes
 
@@ -149,21 +152,30 @@ Possible future improvements:
 ## Troubleshooting
 
 ### Terminal doesn't support ANSI codes
-If your terminal doesn't display colors or positioning correctly, use the traditional output (don't use `--modern-output`).
+If your terminal doesn't display colors or positioning correctly, the output will automatically fall back to traditional mode when:
+- Output is redirected to a file
+- Running in a non-TTY environment
+
+If you're in a TTY but experiencing issues, use `--debug` mode to force traditional output.
 
 ### Output looks garbled
 This can happen if:
 - Terminal size changes during build
-- Terminal doesn't support ANSI escape codes
-- Output is piped or redirected
+- Terminal doesn't fully support ANSI escape codes
 
-Solution: Don't use `--modern-output` or use a different terminal emulator.
+Solution: Use `--debug` mode to get traditional line-by-line output, or use a different terminal emulator.
 
 ### Want to see all output
-Use `--debug` mode instead of `--modern-output`, or redirect stderr to a file:
+Use `--debug` mode to see complete verbose output:
 
 ```bash
-aliBuild build --modern-output O2 2> full_build.log
+aliBuild build --debug O2
+```
+
+Or redirect output to capture everything:
+
+```bash
+aliBuild build O2 2> full_build.log
 ```
 
 ## Compatibility
@@ -175,4 +187,4 @@ aliBuild build --modern-output O2 2> full_build.log
 
 ---
 
-**Note**: This feature is designed to improve the user experience during interactive builds. For automated builds, CI/CD pipelines, or when you need complete logs, the traditional output (without `--modern-output`) is recommended.
+**Note**: Modern output is designed for interactive terminal use and automatically activates in TTY environments. For automated builds, CI/CD pipelines, or when output is redirected, traditional line-by-line output is automatically used. You can always force traditional output by using `--debug` mode.

@@ -731,13 +731,14 @@ def doBuild(args, parser):
     mainPackage = buildOrder.pop()
     warning("Not rebuilding %s because --only-deps option provided.", mainPackage)
 
-  # Initialize modern terminal output if requested
+  # Initialize modern terminal output (enabled by default for TTY, disabled in debug mode)
   modernProgress = None
-  if getattr(args, "modernOutput", False):
+  import sys
+  if sys.stdout.isatty() and not args.debug:
     modernProgress = ModernBuildProgress(
       total_packages=len(buildOrder),
       max_log_lines=10,
-      enable_modern_output=not args.debug  # Disable modern output in debug mode
+      enable_modern_output=True
     )
     # Pre-populate the package list
     for pkg in buildOrder:

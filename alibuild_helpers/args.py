@@ -39,8 +39,6 @@ def doParseArgs():
   parser.add_argument("-d", "--debug", dest="debug", action="store_true", help="Enable debug log output")
   parser.add_argument("-n", "--dry-run", dest="dryRun", action="store_true",
                       help="Print what would happen, without actually doing it.")
-  parser.add_argument("--modern-output", dest="modernOutput", action="store_true",
-                      help="Use modern terminal output with fixed header and scrolling logs")
 
   subparsers = parser.add_subparsers(dest="action")
   analytics_parser = subparsers.add_parser("analytics", help="turn on / off analytics",
