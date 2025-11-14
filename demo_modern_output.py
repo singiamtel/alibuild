@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Demo script to showcase the modern terminal output for alibuild.
+Demo script to showcase the Docker-style terminal output for alibuild.
 
-This simulates a build process with multiple packages to demonstrate
-the fixed header with scrolling log output.
+This simulates a build process with multiple packages to demonstrate:
+- Compact single-line completed builds
+- Streaming output for currently building package
+- Animated spinner for in-progress builds
+- Terminal resize handling
 """
 
 import time
@@ -50,12 +53,14 @@ def simulate_package_build(progress, package_name, version, duration=3):
 def main():
     """Run the demo."""
     print("=" * 70)
-    print("Modern Terminal Output Demo for alibuild")
+    print("Docker-style Terminal Output Demo for alibuild")
     print("=" * 70)
     print()
-    print("This demo shows the new modern output format:")
-    print("  - Fixed header showing all build steps with timings")
-    print("  - Scrolling log area showing the last 10 lines of output")
+    print("This demo shows the Docker-style output format:")
+    print("  - Compact completed builds as single lines")
+    print("  - Current build with streaming output (last 5 lines)")
+    print("  - Animated spinner for in-progress builds")
+    print("  - Handles terminal resize gracefully")
     print()
     print("Starting demo in 2 seconds...")
     print()
@@ -76,7 +81,7 @@ def main():
     # Create the modern progress display
     progress = ModernBuildProgress(
         total_packages=len(packages),
-        max_log_lines=10,
+        max_log_lines=5,
         enable_modern_output=True
     )
 

@@ -737,7 +737,7 @@ def doBuild(args, parser):
   if sys.stdout.isatty() and not args.debug:
     modernProgress = ModernBuildProgress(
       total_packages=len(buildOrder),
-      max_log_lines=10,
+      max_log_lines=5,
       enable_modern_output=True
     )
     # Pre-populate the package list

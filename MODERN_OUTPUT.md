@@ -1,41 +1,40 @@
 # Modern Terminal Output for alibuild
 
-This document describes the modern terminal output for alibuild, which provides a cleaner and more informative build experience.
+This document describes the Docker-style terminal output for alibuild, which provides a cleaner and more informative build experience.
 
 ## Overview
 
-The modern output format is **enabled by default** for interactive terminal sessions and displays:
-1. **Fixed header** showing all build steps with real-time timings
-2. **Scrolling log area** showing the most recent verbose output (default: 10 lines)
-
-This is similar to modern container CLIs like Docker and Podman, where you can see the overall progress while still monitoring detailed output.
+The modern output format is **enabled by default** for interactive terminal sessions and displays builds in a Docker-like style:
+1. **Compact completed builds** as single lines with status, name, and timing
+2. **Current build** with streaming output showing the last 5 lines
+3. **Animated spinner** for in-progress builds
+4. **Automatic terminal resize handling** for smooth experience
 
 Modern output automatically activates when running in a TTY (interactive terminal) and is disabled in debug mode or when output is redirected.
 
 ## Example Output
 
-```
-==> Building packages (3/8)
-    ✓ zlib           2.3s
-    ✓ OpenSSL        12.5s
-    ⋯ ROOT           45.2s...
-    • GEANT3
-    • GEANT4
-    • AliRoot
+The output looks like this (similar to Docker):
 
-─── Build Output ────────────────────────
-[ 42%] Building CXX object CMakeFiles/ROOT.dir/src/analysis.cxx.o
-Compiling analysis framework...
-Linking shared library libROOT.so
-Installing ROOT to build directory
-[ 43%] Built target ROOT
+```
+[1/8] ✓ zlib@1.2.11 2.3s
+[2/8] ✓ OpenSSL@1.1.1 12.5s
+[3/8] ⠹ ROOT@6.24.00 45.2s
+ => Configuring ROOT build system
+ => [ 42%] Building CXX object CMakeFiles/ROOT.dir/src/analysis.cxx.o
+ => Compiling analysis framework
+ => Linking shared library libROOT.so
+ => Installing ROOT to build directory
+[4/8] • GEANT3@4.0.0
+[5/8] • GEANT4@10.7.2
+[6/8] • AliRoot@v5-09-55
 ```
 
 ### Status Symbols
 
 - **✓** (green checkmark) - Package built successfully
 - **✗** (red X) - Package build failed
-- **⋯** (yellow ellipsis) - Package currently building
+- **⠹** (cyan spinner) - Package currently building (animated)
 - **•** (gray bullet) - Package pending
 
 ## Usage
@@ -94,16 +93,18 @@ Modern output automatically falls back to traditional line-by-line output when:
 - **Non-interactive shells** where stdout is not a TTY
 
 ### Log Lines Configuration
-By default, the modern output shows the last 10 lines of build output. This can be customized by modifying the `max_log_lines` parameter in the code (future versions may expose this as a command-line option).
+By default, the Docker-style output shows the last 5 lines of build output for the currently building package. This can be customized by modifying the `max_log_lines` parameter in the code (future versions may expose this as a command-line option).
 
 ## Technical Details
 
 ### Implementation
-The modern output uses only ANSI escape codes for terminal control - no external dependencies:
-- Cursor positioning: `\033[{n}A` (move up), `\033[{n}B` (move down)
+The Docker-style output uses only ANSI escape codes for terminal control - no external dependencies:
+- Cursor positioning: `\033[{n}A` (move up n lines)
 - Cursor visibility: `\033[?25l` (hide), `\033[?25h` (show)
-- Line clearing: `\033[K` (clear to end of line), `\033[J` (clear to end of screen)
-- Colors: Standard ANSI color codes (green, red, yellow, gray)
+- Screen clearing: `\033[J` (clear to end of screen)
+- Colors: Standard ANSI color codes (green, red, cyan, dim/bold)
+- Terminal resize: Uses SIGWINCH signal handler to detect and adapt to terminal size changes
+- Unicode spinners: Braille pattern characters for smooth animation
 
 ### Files Modified
 - `alibuild_helpers/modern_output.py` - New module containing the modern output classes

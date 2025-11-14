@@ -1,14 +1,15 @@
 """
 Modern terminal output for alibuild.
 
-Provides a fixed header showing build steps with timings, and a scrolling
-log area for verbose output. Similar to modern container CLIs.
-Uses only ANSI escape codes - no external dependencies.
+Provides Docker-style output with compact completed steps and streaming
+output for the current build step. Uses only ANSI escape codes.
 """
 
 import sys
 import time
 import re
+import signal
+import os
 from collections import deque
 from typing import Optional, List
 
@@ -64,20 +65,20 @@ class BuildStep:
 
 class ModernBuildProgress:
     """
-    Modern terminal output manager for alibuild.
+    Docker-style terminal output for alibuild builds.
 
-    Shows a fixed header with build steps and timings, and a scrolling
-    log area below with the most recent output lines.
+    Shows completed builds as single compact lines, and streams output
+    for the currently building package.
     """
 
-    def __init__(self, total_packages: int, max_log_lines: int = 10,
+    def __init__(self, total_packages: int, max_log_lines: int = 5,
                  enable_modern_output: bool = True):
         """
         Initialize the modern build progress display.
 
         Args:
             total_packages: Total number of packages to build
-            max_log_lines: Maximum number of log lines to show (default 10)
+            max_log_lines: Maximum number of log lines to show (default 5)
             enable_modern_output: Whether to use modern output (requires TTY)
         """
         self.total_packages = total_packages
@@ -85,32 +86,57 @@ class ModernBuildProgress:
         self.build_steps: List[BuildStep] = []
         self.current_step: Optional[BuildStep] = None
         self.log_buffer = deque(maxlen=max_log_lines)
-        self.is_tty = sys.stdout.isatty()
+        self.is_tty = sys.stderr.isatty()
         self.enabled = enable_modern_output and self.is_tty
-        self.header_lines = 0
         self.last_update = 0
         self.update_interval = 0.1  # Update display at most every 100ms
+        self.last_output = ""
+        self.terminal_width = 80
+        self.needs_redraw = False
 
         # ANSI escape codes
-        self.CURSOR_UP = "\033[{n}A"
-        self.CURSOR_DOWN = "\033[{n}B"
-        self.CURSOR_TO_COL = "\033[{col}G"
-        self.SAVE_CURSOR = "\033[s"
-        self.RESTORE_CURSOR = "\033[u"
-        self.CLEAR_LINE = "\033[K"
-        self.CLEAR_TO_END = "\033[J"
+        self.CLEAR_LINE = "\033[2K"
+        self.CLEAR_SCREEN = "\033[2J"
+        self.CURSOR_HOME = "\033[H"
         self.HIDE_CURSOR = "\033[?25l"
         self.SHOW_CURSOR = "\033[?25h"
+        self.SAVE_CURSOR = "\033[7"
+        self.RESTORE_CURSOR = "\033[8"
 
-        # Status symbols
+        # Status symbols and colors
         self.SYMBOL_DONE = "\033[32m✓\033[m"      # Green checkmark
         self.SYMBOL_FAILED = "\033[31m✗\033[m"    # Red X
-        self.SYMBOL_PROGRESS = "\033[33m⋯\033[m"  # Yellow ellipsis
-        self.SYMBOL_PENDING = "\033[90m•\033[m"   # Gray bullet
+        self.SYMBOL_BUILDING = "\033[34m⋯\033[m"  # Blue ellipsis
+        self.COLOR_DIM = "\033[2m"
+        self.COLOR_RESET = "\033[m"
+        self.COLOR_BOLD = "\033[1m"
 
         if self.enabled:
+            self._update_terminal_size()
+            self._setup_signal_handlers()
             sys.stderr.write(self.HIDE_CURSOR)
             sys.stderr.flush()
+
+    def _setup_signal_handlers(self):
+        """Set up signal handlers for terminal resize."""
+        try:
+            signal.signal(signal.SIGWINCH, self._handle_resize)
+        except (AttributeError, ValueError):
+            # SIGWINCH not available on this platform or not in main thread
+            pass
+
+    def _handle_resize(self, signum, frame):
+        """Handle terminal resize signal."""
+        self._update_terminal_size()
+        self.needs_redraw = True
+
+    def _update_terminal_size(self):
+        """Update the cached terminal size."""
+        try:
+            size = os.get_terminal_size(sys.stderr.fileno())
+            self.terminal_width = size.columns
+        except (OSError, AttributeError):
+            self.terminal_width = 80
 
     def add_package(self, package_name: str, version: str = "") -> BuildStep:
         """Add a new package to the build queue."""
@@ -154,73 +180,57 @@ class ModernBuildProgress:
         # Strip ANSI codes for length calculation
         clean_line = re.sub(r'\033\[[0-9;]*m', '', line)
 
-        # Extract percentage if present
-        percent_match = re.search(r'(\[?\s*(\d+)%\s*\]?)', line)
-
-        # Truncate very long lines
-        if len(clean_line) > 200:
-            line = clean_line[:197] + "..."
+        # Truncate very long lines to terminal width
+        max_len = self.terminal_width - 5  # Leave room for " => " prefix
+        if len(clean_line) > max_len:
+            line = clean_line[:max_len - 3] + "..."
 
         self.log_buffer.append(line)
 
         if self.enabled:
             now = time.time()
             # Rate limit updates
-            if now - self.last_update > self.update_interval:
+            if now - self.last_update > self.update_interval or self.needs_redraw:
                 self._render()
                 self.last_update = now
+                self.needs_redraw = False
 
-    def _get_status_symbol(self, step: BuildStep) -> str:
-        """Get the status symbol for a build step."""
+    def _format_step_line(self, step: BuildStep, index: int) -> str:
+        """Format a single build step line (Docker-style)."""
+        step_num = f"[{index + 1}/{self.total_packages}]"
+        version_str = f"@{step.version}" if step.version else ""
+        name_with_version = f"{step.name}{version_str}"
+
         if step.status == BuildStep.STATUS_DONE:
-            return self.SYMBOL_DONE
-        elif step.status == BuildStep.STATUS_FAILED:
-            return self.SYMBOL_FAILED
-        elif step.status == BuildStep.STATUS_IN_PROGRESS:
-            return self.SYMBOL_PROGRESS
-        else:
-            return self.SYMBOL_PENDING
-
-    def _format_header(self) -> str:
-        """Format the header showing build progress."""
-        completed = sum(1 for s in self.build_steps
-                       if s.status in (BuildStep.STATUS_DONE, BuildStep.STATUS_FAILED))
-
-        lines = []
-        lines.append(f"\033[1;34m==>\033[m \033[1mBuilding packages ({completed}/{self.total_packages})\033[m")
-
-        # Show all build steps with timings
-        for step in self.build_steps:
-            symbol = self._get_status_symbol(step)
             duration = step.format_duration()
-            version_str = f"@{step.version}" if step.version else ""
+            return f"{self.COLOR_DIM}{step_num}{self.COLOR_RESET} {self.SYMBOL_DONE} {name_with_version} {self.COLOR_DIM}{duration}{self.COLOR_RESET}"
+        elif step.status == BuildStep.STATUS_FAILED:
+            duration = step.format_duration()
+            return f"{self.COLOR_DIM}{step_num}{self.COLOR_RESET} {self.SYMBOL_FAILED} {name_with_version} {self.COLOR_DIM}{duration}{self.COLOR_RESET}"
+        elif step.status == BuildStep.STATUS_IN_PROGRESS:
+            # Animate with spinner
+            spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+            spinner_idx = int((time.time() * 10) % len(spinner_chars))
+            spinner = f"\033[36m{spinner_chars[spinner_idx]}\033[m"  # Cyan
+            duration = step.format_duration()
+            return f"{self.COLOR_DIM}{step_num}{self.COLOR_RESET} {spinner} {self.COLOR_BOLD}{name_with_version}{self.COLOR_RESET} {self.COLOR_DIM}{duration}{self.COLOR_RESET}"
+        else:
+            # Pending
+            return f"{self.COLOR_DIM}{step_num} • {name_with_version}{self.COLOR_RESET}"
 
-            if step.status == BuildStep.STATUS_IN_PROGRESS:
-                # Animate the in-progress step
-                stage_idx = int((time.time() * 2) % 3)
-                dots = "." * (stage_idx + 1)
-                lines.append(f"    {symbol} {step.name}{version_str}  {duration}{dots}")
-            elif duration:
-                lines.append(f"    {symbol} {step.name}{version_str}  {duration}")
-            else:
-                lines.append(f"    {symbol} {step.name}{version_str}")
-
-        return "\n".join(lines)
-
-    def _format_log_section(self) -> str:
-        """Format the scrolling log section."""
-        if not self.log_buffer:
-            return ""
-
+    def _format_output(self) -> str:
+        """Format the complete output (Docker-style)."""
         lines = []
-        lines.append("")  # Blank line separator
-        lines.append("\033[90m─── Build Output " + "─" * 50 + "\033[m")
 
-        for log_line in self.log_buffer:
-            # Truncate if too long
-            if len(log_line) > 200:
-                log_line = log_line[:197] + "..."
-            lines.append(log_line)
+        # Show all build steps
+        for i, step in enumerate(self.build_steps):
+            lines.append(self._format_step_line(step, i))
+
+            # Show log output only for the currently building step
+            if step == self.current_step and self.log_buffer:
+                for log_line in self.log_buffer:
+                    # Add " => " prefix like Docker
+                    lines.append(f" {self.COLOR_DIM}=>{self.COLOR_RESET} {log_line}")
 
         return "\n".join(lines)
 
@@ -229,40 +239,39 @@ class ModernBuildProgress:
         if not self.enabled:
             return
 
-        # Move cursor back to start of header if we've already drawn
-        if self.header_lines > 0:
-            sys.stderr.write(self.CURSOR_UP.format(n=self.header_lines))
-            sys.stderr.write("\r")
+        new_output = self._format_output()
 
-        # Render header and log section
-        header = self._format_header()
-        log_section = self._format_log_section()
+        # Clear and redraw from scratch to avoid cursor position issues
+        # This is more robust than trying to track cursor positions
+        if self.last_output:
+            # Count lines in last output to move cursor back
+            num_lines = self.last_output.count("\n")
+            if num_lines > 0:
+                # Move cursor to beginning of last output
+                sys.stderr.write(f"\033[{num_lines}A")
+                sys.stderr.write("\r")
 
-        output = header
-        if log_section:
-            output += "\n" + log_section
-
-        # Clear to end of screen and write new content
-        sys.stderr.write(self.CLEAR_TO_END)
-        sys.stderr.write(output)
-
-        # Count lines for next update
-        self.header_lines = output.count("\n")
-
+        # Clear everything below cursor and write new output
+        sys.stderr.write("\033[J")  # Clear to end of screen
+        sys.stderr.write(new_output)
         sys.stderr.flush()
+
+        self.last_output = new_output
 
     def cleanup(self):
         """Clean up terminal state."""
         if self.enabled:
-            # Move cursor to end
-            if self.header_lines > 0:
-                sys.stderr.write("\n")
+            # Move to next line and show cursor
+            sys.stderr.write("\n")
             sys.stderr.write(self.SHOW_CURSOR)
             sys.stderr.flush()
 
     def __del__(self):
         """Ensure cursor is shown on deletion."""
-        self.cleanup()
+        try:
+            self.cleanup()
+        except:
+            pass
 
 
 class ModernProgressPrinter:
@@ -304,7 +313,3 @@ class ModernProgressPrinter:
         """Finish the current operation."""
         if self.started:
             self.modern_progress.finish_package(failed=error)
-            if msg:
-                # Log the final message
-                color = "\033[31m" if error else "\033[32m"
-                self.modern_progress.log(f"{color}{msg}\033[m")
