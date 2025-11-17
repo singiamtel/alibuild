@@ -52,62 +52,50 @@ def log_current_package(package, main_package, specs, devel_prefix) -> None:
   ))
 
 
-class ProgressPrint:
-  def __init__(self, begin_msg="", min_interval=0.) -> None:
-    self.count = -1
-    self.lasttime = 0
-    self.STAGES = ".", "..", "...", "....", ".....", "....", "...", ".."
+class ProgressPrinter:
+  """
+  Progress printer that uses modern Docker-style output if TTY, otherwise plain debug output.
+  """
+  def __init__(self, modern_progress=None, begin_msg=""):
+    self.modern_progress = modern_progress
     self.begin_msg = begin_msg
-    self.percent = -1
-    self.min_interval = min_interval
-    self.last_update = 0
+    self.started = False
 
-  def __call__(self, txt, *args) -> None:
-    now = time.time()
-    if (now - self.last_update) < self.min_interval:
-      return
-    self.last_update = now
+  def __call__(self, txt: str, *args):
+    """Log a line of output."""
+    if args:
+      txt = txt % args
 
-    if logger.level <= logging.DEBUG or not sys.stdout.isatty():
-      debug(txt, *args)
-      return
-    if time.time() - self.lasttime < 0.5:
-      return
-    if self.count == -1 and self.begin_msg:
-      sys.stderr.write("\033[1;35m==>\033[m " + self.begin_msg)
-    txt %= args
-    self.erase()
-    m = re.search(r"((^|[^0-9])([0-9]{1,2})%|\[([0-9]+)/([0-9]+)\])", txt)
-    if m:
-      if m.group(3) is not None:
-        self.percent = int(m.group(3))
-      else:
-        num = int(m.group(4))
-        den = int(m.group(5))
-        if num >= 0 and den > 0:
-          self.percent = 100 * num / den
-    if self.percent > -1:
-      sys.stderr.write(" [%2d%%] " % self.percent)
-    self.count = (self.count+1) % len(self.STAGES)
-    sys.stderr.write(self.STAGES[self.count])
-    self.lasttime = time.time()
-    sys.stderr.flush()
+    if self.modern_progress:
+      # Modern Docker-style output
+      if not self.started:
+        self.started = True
+        # Parse package name from begin_msg if present
+        # Format: "Compiling PACKAGE@VERSION" or "Unpacking PACKAGE@VERSION"
+        if self.begin_msg:
+          match = re.match(r'(?:Compiling|Unpacking)\s+([^@]+)(?:@(.+))?',
+                         self.begin_msg)
+          if match:
+            package = match.group(1)
+            version = match.group(2) or ""
+            self.modern_progress.start_package(package, version)
 
-  def erase(self) -> None:
-    nerase = len(self.STAGES[self.count]) if self.count > -1 else 0
-    if self.percent > -1:
-      nerase = nerase + 7
-    sys.stderr.write("\b"*nerase+" "*nerase+"\b"*nerase)
-    sys.stderr.flush()
+      self.modern_progress.log(txt)
+    else:
+      # No TTY: just print debug output
+      debug(txt)
 
-  def end(self, msg="", error=False):
-    if self.count == -1:
-      return
-    self.erase()
-    if msg:
-      sys.stderr.write(": %s%s\033[m" % ("\033[31m" if error else "\033[32m", msg))
-    sys.stderr.write("\n")
-    sys.stderr.flush()
+  def erase(self):
+    """No-op for compatibility."""
+    pass
+
+  def end(self, msg: str = "", error: bool = False):
+    """Finish the current operation."""
+    if self.modern_progress and self.started:
+      self.modern_progress.finish_package(failed=error)
+    elif msg:
+      # No TTY: print the final message
+      debug(msg)
 
 
 # Add loglevel BANNER (same as INFO but with more emphasis on ttys)

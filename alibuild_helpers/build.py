@@ -17,8 +17,8 @@ from alibuild_helpers.sl import Sapling
 from alibuild_helpers.scm import SCMError
 from alibuild_helpers.sync import remote_from_url
 from alibuild_helpers.workarea import logged_scm, updateReferenceRepoSpec, checkout_sources
-from alibuild_helpers.log import ProgressPrint, log_current_package
-from alibuild_helpers.modern_output import ModernBuildProgress, ModernProgressPrinter
+from alibuild_helpers.log import ProgressPrinter, log_current_package
+from alibuild_helpers.modern_output import ModernBuildProgress
 from glob import glob
 from textwrap import dedent
 from collections import OrderedDict
@@ -70,7 +70,7 @@ def update_git_repos(args, specs, buildOrder):
                             ".", prompt=git_prompt, logOutput=False)
         specs[package]["scm_refs"] = specs[package]["scm"].parseRefs(output)
 
-    progress = ProgressPrint("Updating repositories")
+    progress = ProgressPrinter(begin_msg="Updating repositories")
     requires_auth = set()
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
         future_to_download = {
@@ -1129,11 +1129,7 @@ def doBuild(args, parser):
                 (spec["package"],
                  args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"])
 
-    if modernProgress:
-      progress = ModernProgressPrinter(modernProgress, begin_msg)
-    else:
-      progress = ProgressPrint(begin_msg)
-
+    progress = ProgressPrinter(modernProgress, begin_msg)
     err = execute(build_command, printer=progress)
     progress.end("failed" if err else "done", err)
     report_event("BuildError" if err else "BuildSuccess", spec["package"], " ".join((
