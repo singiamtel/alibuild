@@ -193,7 +193,6 @@ class ModernBuildProgress:
             if now - self.last_update > self.update_interval or self.needs_redraw:
                 self._render()
                 self.last_update = now
-                self.needs_redraw = False
 
     def _format_step_line(self, step: BuildStep, index: int) -> str:
         """Format a single build step line (Docker-style)."""
@@ -234,6 +233,27 @@ class ModernBuildProgress:
 
         return "\n".join(lines)
 
+    def _count_screen_lines(self, text: str) -> int:
+        """Count how many screen lines the text will actually take, accounting for wrapping."""
+        if not text:
+            return 0
+
+        lines = text.split("\n")
+        total_screen_lines = 0
+
+        for line in lines:
+            # Strip ANSI codes for accurate length calculation
+            clean_line = re.sub(r'\033\[[0-9;]*m', '', line)
+            line_len = len(clean_line)
+
+            if line_len == 0:
+                total_screen_lines += 1
+            else:
+                # Calculate how many screen lines this logical line takes
+                total_screen_lines += (line_len + self.terminal_width - 1) // self.terminal_width
+
+        return total_screen_lines
+
     def _render(self):
         """Render the complete display."""
         if not self.enabled:
@@ -241,18 +261,26 @@ class ModernBuildProgress:
 
         new_output = self._format_output()
 
-        # Clear and redraw from scratch to avoid cursor position issues
-        # This is more robust than trying to track cursor positions
-        if self.last_output:
-            # Count lines in last output to move cursor back
+        # Handle terminal resize by doing a more aggressive clear
+        if self.needs_redraw and self.last_output:
+            # After resize, line wrapping changes, so calculate actual screen lines
+            # Use a conservative estimate (double the logical lines, capped at 100)
+            estimated_lines = min(self.last_output.count("\n") * 2 + 5, 100)
+            sys.stderr.write(f"\033[{estimated_lines}A")
+            sys.stderr.write("\r")
+            # Clear everything from here down
+            sys.stderr.write("\033[J")
+            self.needs_redraw = False
+        elif self.last_output:
+            # Normal case: move cursor to beginning of last output
             num_lines = self.last_output.count("\n")
             if num_lines > 0:
-                # Move cursor to beginning of last output
                 sys.stderr.write(f"\033[{num_lines}A")
                 sys.stderr.write("\r")
+            # Clear everything below cursor
+            sys.stderr.write("\033[J")
 
-        # Clear everything below cursor and write new output
-        sys.stderr.write("\033[J")  # Clear to end of screen
+        # Write new output
         sys.stderr.write(new_output)
         sys.stderr.flush()
 
