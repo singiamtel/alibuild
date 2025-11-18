@@ -1,5 +1,5 @@
 """
-Modern terminal output for alibuild.
+Docker-style terminal output for alibuild.
 
 Provides Docker-style output with compact completed steps and streaming
 output for the current build step. Uses only ANSI escape codes.
@@ -63,7 +63,7 @@ class BuildStep:
             return f"{hours}h {minutes}m"
 
 
-class ModernBuildProgress:
+class BuildProgress:
     """
     Docker-style terminal output for alibuild builds.
 
@@ -71,15 +71,13 @@ class ModernBuildProgress:
     for the currently building package.
     """
 
-    def __init__(self, total_packages: int, max_log_lines: int = 5,
-                 enable_modern_output: bool = True):
+    def __init__(self, total_packages: int, max_log_lines: int = 5):
         """
-        Initialize the modern build progress display.
+        Initialize the build progress display.
 
         Args:
             total_packages: Total number of packages to build
             max_log_lines: Maximum number of log lines to show (default 5)
-            enable_modern_output: Whether to use modern output (requires TTY)
         """
         self.total_packages = total_packages
         self.max_log_lines = max_log_lines
@@ -87,7 +85,7 @@ class ModernBuildProgress:
         self.current_step: Optional[BuildStep] = None
         self.log_buffer = deque(maxlen=max_log_lines)
         self.is_tty = sys.stderr.isatty()
-        self.enabled = enable_modern_output and self.is_tty
+        self.enabled = self.is_tty
         self.last_update = 0
         self.update_interval = 0.1  # Update display at most every 100ms
         self.last_output = ""

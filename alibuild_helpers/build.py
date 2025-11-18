@@ -18,7 +18,7 @@ from alibuild_helpers.scm import SCMError
 from alibuild_helpers.sync import remote_from_url
 from alibuild_helpers.workarea import logged_scm, updateReferenceRepoSpec, checkout_sources
 from alibuild_helpers.log import ProgressPrinter, log_current_package
-from alibuild_helpers.modern_output import ModernBuildProgress
+from alibuild_helpers.build_progress import BuildProgress
 from glob import glob
 from textwrap import dedent
 from collections import OrderedDict
@@ -731,20 +731,19 @@ def doBuild(args, parser):
     mainPackage = buildOrder.pop()
     warning("Not rebuilding %s because --only-deps option provided.", mainPackage)
 
-  # Initialize modern terminal output (enabled by default for TTY, disabled in debug mode)
-  modernProgress = None
+  # Initialize Docker-style build progress output (enabled by default for TTY, disabled in debug mode)
+  buildProgress = None
   import sys
   if sys.stdout.isatty() and not args.debug:
-    modernProgress = ModernBuildProgress(
+    buildProgress = BuildProgress(
       total_packages=len(buildOrder),
-      max_log_lines=5,
-      enable_modern_output=True
+      max_log_lines=5
     )
     # Pre-populate the package list
     for pkg in buildOrder:
       pkg_spec = specs[pkg]
       version = getattr(args, "develPrefix", None) if pkg_spec.get("is_devel_pkg") else pkg_spec.get("version", "")
-      modernProgress.add_package(pkg, version)
+      buildProgress.add_package(pkg, version)
 
   while buildOrder:
     p = buildOrder[0]
@@ -1129,7 +1128,7 @@ def doBuild(args, parser):
                 (spec["package"],
                  args.develPrefix if "develPrefix" in args and spec["is_devel_pkg"] else spec["version"])
 
-    progress = ProgressPrinter(modernProgress, begin_msg)
+    progress = ProgressPrinter(buildProgress, begin_msg)
     err = execute(build_command, printer=progress)
     progress.end("failed" if err else "done", err)
     report_event("BuildError" if err else "BuildSuccess", spec["package"], " ".join((
@@ -1226,8 +1225,8 @@ def doBuild(args, parser):
     banner("Untracked files in the following directories resulted in a rebuild of "
            "the associated package and its dependencies:\n%s\n\nPlease commit or remove them to avoid useless rebuilds.", "\n".join(untrackedFilesDirectories))
 
-  # Cleanup modern terminal output
-  if modernProgress:
-    modernProgress.cleanup()
+  # Cleanup build progress output
+  if buildProgress:
+    buildProgress.cleanup()
 
   debug("Everything done")

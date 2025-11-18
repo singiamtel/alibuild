@@ -11,7 +11,7 @@ This simulates a build process with multiple packages to demonstrate:
 
 import time
 import random
-from alibuild_helpers.modern_output import ModernBuildProgress
+from alibuild_helpers.build_progress import BuildProgress
 
 def simulate_package_build(progress, package_name, version, duration=3):
     """Simulate building a package with verbose output."""
@@ -78,11 +78,10 @@ def main():
         ("AliRoot", "v5-09-55"),
     ]
 
-    # Create the modern progress display
-    progress = ModernBuildProgress(
+    # Create the build progress display
+    progress = BuildProgress(
         total_packages=len(packages),
-        max_log_lines=5,
-        enable_modern_output=True
+        max_log_lines=5
     )
 
     # Pre-populate all packages

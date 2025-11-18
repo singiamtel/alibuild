@@ -54,10 +54,10 @@ def log_current_package(package, main_package, specs, devel_prefix) -> None:
 
 class ProgressPrinter:
   """
-  Progress printer that uses modern Docker-style output if TTY, otherwise plain debug output.
+  Progress printer that uses Docker-style output if TTY, otherwise plain debug output.
   """
-  def __init__(self, modern_progress=None, begin_msg=""):
-    self.modern_progress = modern_progress
+  def __init__(self, build_progress=None, begin_msg=""):
+    self.build_progress = build_progress
     self.begin_msg = begin_msg
     self.started = False
 
@@ -66,8 +66,8 @@ class ProgressPrinter:
     if args:
       txt = txt % args
 
-    if self.modern_progress:
-      # Modern Docker-style output
+    if self.build_progress:
+      # Docker-style output
       if not self.started:
         self.started = True
         # Parse package name from begin_msg if present
@@ -78,9 +78,9 @@ class ProgressPrinter:
           if match:
             package = match.group(1)
             version = match.group(2) or ""
-            self.modern_progress.start_package(package, version)
+            self.build_progress.start_package(package, version)
 
-      self.modern_progress.log(txt)
+      self.build_progress.log(txt)
     else:
       # No TTY: just print debug output
       debug(txt)
@@ -91,8 +91,8 @@ class ProgressPrinter:
 
   def end(self, msg: str = "", error: bool = False):
     """Finish the current operation."""
-    if self.modern_progress and self.started:
-      self.modern_progress.finish_package(failed=error)
+    if self.build_progress and self.started:
+      self.build_progress.finish_package(failed=error)
     elif msg:
       # No TTY: print the final message
       debug(msg)

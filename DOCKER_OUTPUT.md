@@ -1,16 +1,16 @@
-# Modern Terminal Output for alibuild
+# Docker-style Terminal Output for alibuild
 
 This document describes the Docker-style terminal output for alibuild, which provides a cleaner and more informative build experience.
 
 ## Overview
 
-The modern output format is **enabled by default** for interactive terminal sessions and displays builds in a Docker-like style:
+The Docker-style output is **enabled by default** for interactive terminal sessions:
 1. **Compact completed builds** as single lines with status, name, and timing
 2. **Current build** with streaming output showing the last 5 lines
 3. **Animated spinner** for in-progress builds
 4. **Automatic terminal resize handling** for smooth experience
 
-Modern output automatically activates when running in a TTY (interactive terminal) and is disabled in debug mode or when output is redirected.
+Docker-style output automatically activates when running in a TTY (interactive terminal) and is disabled in debug mode or when output is redirected.
 
 ## Example Output
 
@@ -41,17 +41,17 @@ The output looks like this (similar to Docker):
 
 ### Default Behavior
 
-Modern output is **enabled by default** when you run aliBuild in an interactive terminal:
+Docker-style output is **enabled by default** when you run aliBuild in an interactive terminal:
 
 ```bash
-# Modern output is automatically used
+# Docker-style output is automatically used
 aliBuild build O2
 ```
 
 ### Complete Example
 
 ```bash
-# Modern output is active by default in TTY
+# Docker-style output is active by default in TTY
 aliBuild build \
   --defaults o2 \
   --jobs 8 \
@@ -60,7 +60,7 @@ aliBuild build \
 
 ### All Standard Options Work
 
-Modern output works seamlessly with all alibuild options:
+Docker-style output works seamlessly with all alibuild options:
 
 ```bash
 # With development mode
@@ -81,12 +81,12 @@ aliBuild build \
 ## Behavior
 
 ### Automatic Activation
-Modern output is automatically enabled when:
+Docker-style output is automatically enabled when:
 - Running in an interactive terminal (TTY detected)
 - **NOT** in debug mode (`--debug` not specified)
 
 ### Automatic Fallback to Traditional Output
-Modern output automatically falls back to traditional line-by-line output when:
+Docker-style output automatically falls back to traditional line-by-line output when:
 - **Debug mode** is enabled: `aliBuild build --debug O2`
 - **Output is redirected** to a file: `aliBuild build O2 > build.log`
 - **Running in CI/CD** environments without TTY
@@ -107,35 +107,36 @@ The Docker-style output uses only ANSI escape codes for terminal control - no ex
 - Unicode spinners: Braille pattern characters for smooth animation
 
 ### Files Modified
-- `alibuild_helpers/modern_output.py` - New module containing the modern output classes
+- `alibuild_helpers/build_progress.py` - Module containing the Docker-style output classes
 - `alibuild_helpers/build.py` - Integration into the build process with automatic TTY detection
+- `alibuild_helpers/log.py` - ProgressPrinter class that switches between Docker-style and plain output
 
 ### Key Classes
 
-#### `ModernBuildProgress`
+#### `BuildProgress`
 Main class managing the terminal output display. Tracks build steps, timings, and log buffer.
 
-#### `ModernProgressPrinter`
-Adapter class that mimics the `ProgressPrint` interface, allowing drop-in replacement in existing build code.
+#### `ProgressPrinter`
+Adapter class in log.py that uses Docker-style output when available, otherwise plain debug output.
 
 #### `BuildStep`
 Represents a single build step with timing information and status tracking.
 
 ## Demo
 
-A demo script is provided to showcase the modern output without running a full build:
+A demo script is provided to showcase the Docker-style output without running a full build:
 
 ```bash
-python3 demo_modern_output.py
+python3 demo_build_progress.py
 ```
 
-This simulates building several packages and demonstrates the scrolling log output with fixed header.
+This simulates building several packages and demonstrates the Docker-style output.
 
 ## Advantages
 
 1. **Better situational awareness** - See all packages and their status at a glance
 2. **Timing information** - Real-time duration for each build step
-3. **Cleaner output** - Fixed header doesn't scroll away
+3. **Cleaner output** - Compact format, doesn't scroll away
 4. **Verbose logs available** - Still see recent output for debugging
 5. **No external dependencies** - Pure Python with ANSI codes
 6. **Graceful fallback** - Automatically uses traditional output when needed
@@ -145,7 +146,7 @@ This simulates building several packages and demonstrates the scrolling log outp
 Possible future improvements:
 - Command-line option to configure number of log lines
 - Collapsible/expandable log sections
-- Ability to save full logs to file while showing modern output
+- Ability to save full logs to file while showing Docker-style output
 - Progress bars for individual package builds
 - Estimated time remaining based on historical data
 - Color themes and customization options
@@ -188,4 +189,4 @@ aliBuild build O2 2> full_build.log
 
 ---
 
-**Note**: Modern output is designed for interactive terminal use and automatically activates in TTY environments. For automated builds, CI/CD pipelines, or when output is redirected, traditional line-by-line output is automatically used. You can always force traditional output by using `--debug` mode.
+**Note**: Docker-style output is designed for interactive terminal use and automatically activates in TTY environments. For automated builds, CI/CD pipelines, or when output is redirected, traditional line-by-line output is automatically used. You can always force traditional output by using `--debug` mode.
