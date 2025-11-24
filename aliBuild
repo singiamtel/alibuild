@@ -79,7 +79,29 @@ def doMain(args, parser):
     exit(0)
 
   if args.action == "build":
-    doBuild(args, parser)
+    # Enable timing if requested
+    if getattr(args, 'timings', False):
+      from alibuild_helpers.timing import get_timer
+      timer = get_timer()
+      
+      # Patch update_git_repos to add timing
+      from alibuild_helpers import build
+      original_update_git_repos = build.update_git_repos
+      
+      def timed_update_git_repos(args, specs, buildOrder):
+        timer.start_phase("repo_update")
+        result = original_update_git_repos(args, specs, buildOrder)
+        elapsed = timer.end_phase("repo_update")
+        info("Repository updates took %.1f seconds", elapsed)
+        return result
+      
+      build.update_git_repos = timed_update_git_repos
+      
+      # Run build and print summary
+      doBuild(args, parser)
+      timer.print_summary()
+    else:
+      doBuild(args, parser)
     sys.exit(0)
 
 
