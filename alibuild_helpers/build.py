@@ -741,6 +741,22 @@ def doBuild(args, parser):
     mainPackage = buildOrder.pop()
     warning("Not rebuilding %s because --only-deps option provided.", mainPackage)
 
+  # Prefetch tarballs for upcoming packages to parallelize downloads with unpacking.
+  # Use a ThreadPoolExecutor with a small lookahead window to saturate network
+  # while the main thread handles hash calculation and unpacking.
+  prefetch_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="tarball-prefetch")
+  prefetch_futures = {}  # Map from package name to Future
+  prefetch_lookahead = 10  # Number of packages to prefetch ahead
+
+  def prefetch_tarball(pkg_name, pkg_spec):
+    """Prefetch a tarball in the background."""
+    if not pkg_spec["is_devel_pkg"]:
+      try:
+        syncHelper.fetch_tarball(pkg_spec)
+      except Exception as exc:
+        debug("Prefetch failed for %s: %s", pkg_name, exc)
+        raise
+
   while buildOrder:
     p = buildOrder[0]
     spec = specs[p]
@@ -756,6 +772,25 @@ def doBuild(args, parser):
     storeHashes(p, specs, considerRelocation=args.architecture.startswith("osx"))
     debug("Hashes for recipe %s are %s (remote); %s (local)", p,
           ", ".join(spec["remote_hashes"]), ", ".join(spec["local_hashes"]))
+
+    # After calculating hashes for current package, try to prefetch upcoming packages.
+    # We look ahead in buildOrder to find packages we can prefetch (those whose
+    # dependencies have all been processed and thus have hashes calculated).
+    for i in range(1, min(prefetch_lookahead + 1, len(buildOrder))):
+      future_pkg = buildOrder[i]
+      if future_pkg not in prefetch_futures:
+        future_spec = specs[future_pkg]
+        # Check if this future package's dependencies are all satisfied (have hashes)
+        deps_ready = all(specs[dep].get("hash") for dep in future_spec.get("requires", []))
+        if deps_ready and not future_spec["is_devel_pkg"]:
+          # Calculate hashes for this future package now that its dependencies are ready
+          storeHashes(future_pkg, specs, considerRelocation=args.architecture.startswith("osx"))
+          info("Prefetching tarball for %s", future_pkg)
+          prefetch_futures[future_pkg] = prefetch_executor.submit(
+            prefetch_tarball, future_pkg, future_spec)
+        else:
+          debug("Cannot prefetch %s yet: deps_ready=%s, is_devel=%s",
+                future_pkg, deps_ready, future_spec["is_devel_pkg"])
 
     if spec["is_devel_pkg"] and getattr(syncHelper, "writeStore", None):
       warning("Disabling remote write store from now since %s is a development package.", spec["package"])
@@ -943,6 +978,10 @@ def doBuild(args, parser):
       debug("Checking if devel package %s needs rebuild", spec["package"])
       if spec["devel_hash"]+spec["deps_hash"] == spec["old_devel_hash"]:
         info("Development package %s does not need rebuild", spec["package"])
+        # Cancel any prefetch for this package since we're skipping it
+        if p in prefetch_futures:
+          prefetch_futures[p].cancel()
+          del prefetch_futures[p]
         buildOrder.pop(0)
         continue
 
@@ -974,6 +1013,10 @@ def doBuild(args, parser):
       if "obsolete_tarball" in spec:
         unlink(realpath(spec["obsolete_tarball"]))
         unlink(spec["obsolete_tarball"])
+      # Cancel any prefetch for this package since we're skipping it
+      if p in prefetch_futures:
+        prefetch_futures[p].cancel()
+        del prefetch_futures[p]
       buildOrder.pop(0)
       # We can now delete the INSTALLROOT and BUILD directories,
       # assuming the package is not a development one. We also can
@@ -1011,7 +1054,19 @@ def doBuild(args, parser):
     debug("Looking for cached tarball in %s", tar_hash_dir)
     spec["cachedTarball"] = ""
     if not spec["is_devel_pkg"]:
-      syncHelper.fetch_tarball(spec)
+      # Wait for prefetch to complete if it was submitted, otherwise fetch now
+      if p in prefetch_futures:
+        info("Using prefetched tarball for %s", p)
+        try:
+          prefetch_futures[p].result()  # Wait for completion and re-raise any exceptions
+        except Exception as exc:
+          debug("Prefetch failed for %s, will retry: %s", p, exc)
+          syncHelper.fetch_tarball(spec)  # Retry on failure
+        finally:
+          del prefetch_futures[p]  # Clean up completed future
+      else:
+        # No prefetch was submitted (e.g., first package), fetch synchronously
+        syncHelper.fetch_tarball(spec)
       tarballs = glob(os.path.join(tar_hash_dir, "*gz"))
       spec["cachedTarball"] = tarballs[0] if len(tarballs) else ""
       debug("Found tarball in %s" % spec["cachedTarball"]
@@ -1243,6 +1298,9 @@ def doBuild(args, parser):
     # produced in a previous run with a read-only remote store.
     if not spec["revision"].startswith("local"):
       syncHelper.upload_symlinks_and_tarball(spec)
+
+  # Clean up prefetch executor
+  prefetch_executor.shutdown(wait=True)
 
   if not args.onlyDeps:
       banner("Build of %s successfully completed on `%s'.\n"
